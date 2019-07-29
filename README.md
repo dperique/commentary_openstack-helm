@@ -907,3 +907,117 @@ $ openstack flavor list
 | bac82ea2-b43c-4ebe-bfcb-3b1e04fea406 | m1.large  |  8192 |   20 |         0 |     4 | True      |
 +--------------------------------------+-----------+-------+------+-----------+-------+-----------+
 ```
+
+## Looking at the Kubernetes Deployment
+
+The openstack-helm project installs Kubernetes via kubeadm.  I look around to see
+what's there.
+
+Here's the Kubernetes and Docker versions (v1.13.4, docker 18.9.2):
+
+```
+$ kubectl get node -o wide
+NAME      STATUS   ROLES    AGE   VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION      CONTAINER-RUNTIME
+hstack1   Ready    master   10h   v1.13.4   172.17.0.1    <none>        Ubuntu 16.04.6 LTS   4.4.0-157-generic   docker://18.9.2
+
+$ kubectl get cs
+NAME                 STATUS    MESSAGE              ERROR
+controller-manager   Healthy   ok                   
+scheduler            Healthy   ok                   
+etcd-0               Healthy   {"health": "true"} 
+```
+
+I see only one instance of etcd (makes sense for a single node k8s):
+
+```
+$ kubectl get po -n kube-system
+NAME                                       READY   STATUS      RESTARTS   AGE
+calico-etcd-q9lfn                          1/1     Running     0          10h
+calico-kube-controllers-6b896f964f-c8clp   1/1     Running     0          10h
+calico-node-lfvwq                          1/1     Running     1          10h
+calico-settings-qjdw4                      0/1     Completed   0          10h
+etcd-hstack1                               1/1     Running     0          10h <-- one etcd
+ingress-error-pages-578666b5cf-xptcl       1/1     Running     0          10h
+ingress-gsbsb                              1/1     Running     0          10h
+kube-apiserver-hstack1                     1/1     Running     0          10h
+kube-controller-manager-hstack1            1/1     Running     0          10h
+kube-dns-5b4bdb8cd5-8gjks                  3/3     Running     0          10h
+kube-proxy-vzzcf                           1/1     Running     0          10h
+kube-scheduler-hstack1                     1/1     Running     0          10h
+osh-dns-redirector-hstack1                 1/1     Running     0          10h
+tiller-deploy-5c446c85f9-g78c7             1/1     Running     0          10h
+```
+
+The etcd state (i.e., the Kubernetes state) is save on `/var/lib/etcd` on the host.
+This tells me that the Kubernetes state should be preserved across reboots.
+
+```
+$ kubectl describe po -n kube-system etcd-hstack1
+  ...
+    Mounts:
+      /etc/kubernetes/pki/etcd from etcd-certs (rw)
+      /var/lib/etcd from etcd-data (rw)
+```
+
+I also see they see they use calico v3.4.0 for networking:
+
+```
+$ kubectl describe po -n kube-system calico-node-lfvwq|grep Image:
+    Image:         quay.io/stackanetes/kubernetes-entrypoint:v0.3.1
+    Image:         calico/ctl:v3.4.0
+    Image:         quay.io/calico/cni:v3.4.0
+    Image:          quay.io/calico/node:v3.4.0
+```
+
+I'm assuming k8s nodes are designated for various functions via labels:
+
+```
+$ kubectl describe node     
+Name:               hstack1
+Roles:              master
+Labels:             beta.kubernetes.io/arch=amd64
+                    beta.kubernetes.io/os=linux
+                    ceph-mds=enabled
+                    ceph-mgr=enabled
+                    ceph-mon=enabled
+                    ceph-osd=enabled
+                    ceph-rgw=enabled
+                    kubernetes.io/hostname=hstack1
+                    linuxbridge=enabled
+                    node-role.kubernetes.io/master=
+                    openstack-compute-node=enabled   <-- run as compute node
+                    openstack-control-plane=enabled  <-- run as control plane
+                    openstack-helm-node-class=primary
+                    openvswitch=enabled
+...
+Addresses:
+  InternalIP:  172.17.0.1            <-- docker IP (usually, this is the host IP)
+  Hostname:    hstack1
+...
+Capacity:
+ cpu:                56              <-- 56 cores
+ ephemeral-storage:  960072088Ki     <-- 96G RAM
+ hugepages-1Gi:      0
+ hugepages-2Mi:      0
+ memory:             97567716Ki
+ pods:               220
+...
+PodCIDR:                     192.168.0.0/24
+```
+
+
+Certain pods running using the docker IP:
+
+```
+$ kk get po -o wide |grep -v 192.168
+NAME                                          READY   STATUS      RESTARTS   AGE     IP                NODE      NOMINATED NODE   READINESS GATES
+libvirt-libvirt-default-9zq4v                 1/1     Running     0          7h32m   172.17.0.1        hstack1   <none>           <none>
+neutron-dhcp-agent-default-vb7mm              1/1     Running     0          7h22m   172.17.0.1        hstack1   <none>           <none>
+neutron-l3-agent-default-9sn8x                1/1     Running     0          7h22m   172.17.0.1        hstack1   <none>           <none>
+neutron-metadata-agent-default-4vx5w          1/1     Running     0          7h22m   172.17.0.1        hstack1   <none>           <none>
+neutron-ovs-agent-default-rm8cv               1/1     Running     0          7h22m   172.17.0.1        hstack1   <none>           <none>
+nova-compute-default-flfxx                    1/1     Running     0          7h23m   172.17.0.1        hstack1   <none>           <none>
+nova-novncproxy-fd98699d5-7xxrx               1/1     Running     0          7h23m   172.17.0.1        hstack1   <none>           <none>
+openvswitch-db-r4j2q                          1/1     Running     0          7h35m   172.17.0.1        hstack1   <none>           <none>
+openvswitch-vswitchd-hnm8m                    1/1     Running     0          7h35m   172.17.0.1        hstack1   <none>           <none>
+```

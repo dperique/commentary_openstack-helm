@@ -1,4 +1,4 @@
-# Commentary On Installing Openstack Helm All-In-One Method
+# Commentary: Installing Openstack-helm All-In-One
 
 I recently tried out the Openstack Helm project using the All-In-One Method.
 It certainly was no easy copy/paste exercise.  But using some Kubernetes

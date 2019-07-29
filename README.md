@@ -2,7 +2,8 @@
 
 I recently tried out the Openstack Helm project using the All-In-One Method.
 It certainly was no easy copy/paste exercise.  But using some Kubernetes
-expertise, I was able to get things to work for the most part.
+expertise, I was able to get things to work for the most part.  I installed
+this 3 times now and each took about 1.5 hours at least.
 
 To install Openstack helm using the all-in-one (AIO) method,
 follow the

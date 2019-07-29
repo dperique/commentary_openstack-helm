@@ -604,3 +604,163 @@ ubuntu@hstack1:~/new/openstack-helm$ openstack stack create --wait \
 | stack_status_reason | Stack CREATE completed successfully  |
 +---------------------+--------------------------------------+
 ```
+
+## Using the Environment
+
+If you run the [Exercise the Cloud](https://docs.openstack.org/openstack-helm/latest/install/developer/exercise-the-cloud.html)
+section, it will create a VM on a private subnet (10.0.0.0/8) on a public network (172.24.4.0/24) and
+attach a FIP on it.  After that, it does an ssh to the VM and tries various things.
+
+This is nice because it tests public network, private network, FIPs and basic connectivity using
+a basic image.  This is good for developer purposes and just trying things out.  However, as
+mentioned in this [article](https://ask.openstack.org/en/question/7145/havana-unable-to-ping-instances-from-host-machine/)
+not everyone understands what is going on.
+
+## Using a Provider Network
+
+For my needs, I wanted to have a provider network (as opposed to a public network) and I wanted
+to attach VMs there and then just run them.  I don't need FIPs.
+
+To do what I wanted, I followed the
+[instructions to wipe](https://docs.openstack.org/openstack-helm/latest/install/developer/cleaning-deployment.html)
+and applied these changes (in the openstack-helm repo) before running the "compute-kit" installation script:
+
+```
+ubuntu@hstack1:~/new/openstack-helm$ git diff 
+diff --git a/tools/deployment/developer/nfs/160-compute-kit.sh b/tools/deployment/developer/nfs/160-compute-kit.sh
+index 7e2a7fd..f339401 100755
+--- a/tools/deployment/developer/nfs/160-compute-kit.sh
++++ b/tools/deployment/developer/nfs/160-compute-kit.sh
+@@ -54,15 +54,15 @@ conf:
+   plugins:
+     ml2_conf:
+       ml2_type_flat:
+-        flat_networks: public
++        flat_networks: provider
+     openvswitch_agent:
+       agent:
+         tunnel_types: vxlan
+       ovs:
+-        bridge_mappings: public:br-ex
++        bridge_mappings: provider:br-ex
+     linuxbridge_agent:
+       linux_bridge:
+-        bridge_mappings: public:br-ex
++        bridge_mappings: provider:br-ex
+```
+
+I skipped the "Exercise the Cloud" script.
+
+Follow this [doc](https://docs.openstack.org/mitaka/install-guide-ubuntu/launch-instance-networks-provider.html)
+starting at "Create the provider network" do this:
+
+```
+$ openstack network create  --share --external \
+   --provider-physical-network provider \
+   --provider-network-type flat provider
+
+$ openstack subnet create --network provider \
+  --allocation-pool start=172.24.4.10,end=172.24.4.40 \
+  --dns-nameserver 8.8.4.4 --gateway 172.24.4.1 \
+  --subnet-range 172.24.4.0/24 provider
+```
+
+We are using a similar setup as the original example except I'm using a provider network
+instead.
+
+After that, I created an instance like this:
+
+```
+echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDQBFZzxFzB3JZbVv7XZf5nvYiH6jzA1xKJnd6MHXooo84egPiW/ItS2+PNX9g/c1HGYK/2hu9421Qr9Cm3vfQxPKp4CKm5kDRisFqdaMuSXoER9mpOn+r8AdIwXv6z4Ufr/obYQppSmjiixmZUTQTu7dCortadhEyGeOMjZflEHeGVZJQpE32HxpJ0MgK4/AyMEsuq7KK60YrSKYcReikyoSvujaPSv5TvDZNooGVOWxLoOrnEY+mNDGVlUa7cEMQMpv9NJGA4XinMsT1zFTfboeXpVY9fZeOZEOVL+RldaPtvDvlO9mZWekUgyp/0pMm6x4mOcXoQzkucpFGE167b dperiquet@Mozart.local" > dp-pub-key
+
+nova keypair-add --pub-key my_pub_key dp-key1
+
+nova boot vm1 --flavor m1.tiny --image "Cirros 0.3.5 64-bit" --key-name dp-key1 --nic net-name=provider
+```
+
+I then went to the security groups of this VM and added
+
+* ingress ipv4, icmp all
+* egress ipv4, icmp all
+* ingress ipv4, tcp all
+* egress ipv4, tcp all
+
+Here's is some output:
+
+```
+$ nova list
++--------------------------------------+------+--------+------------+-------------+----------------------+
+| ID                                   | Name | Status | Task State | Power State | Networks             |
++--------------------------------------+------+--------+------------+-------------+----------------------+
+| eb7ccfed-a94a-4e3a-a552-c600c64104d2 | vm1  | ACTIVE | -          | Running     | provider=172.24.4.17 |
++--------------------------------------+------+--------+------------+-------------+----------------------+
+ubuntu@hstack1:~$ ping 172.24.4.17
+PING 172.24.4.17 (172.24.4.17) 56(84) bytes of data.
+64 bytes from 172.24.4.17: icmp_seq=1 ttl=64 time=1.57 ms
+64 bytes from 172.24.4.17: icmp_seq=2 ttl=64 time=0.280 ms
+^C
+--- 172.24.4.17 ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss, time 1001ms
+rtt min/avg/max/mdev = 0.280/0.926/1.572/0.646 ms
+ubuntu@hstack1:~$ ssh -i x.rsa cirros@172.24.4.17
+$ ifconfig 
+eth0      Link encap:Ethernet  HWaddr FA:16:3E:FA:EE:63  
+          inet addr:172.24.4.17  Bcast:172.24.4.255  Mask:255.255.255.0
+          inet6 addr: fe80::f816:3eff:fefa:ee63/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:347 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:305 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000 
+          RX bytes:39311 (38.3 KiB)  TX bytes:35442 (34.6 KiB)
+
+lo        Link encap:Local Loopback  
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:16436  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+```
+
+NOTE: in the original example with a public network, I was unable to ping instances
+I created by hand (i.e., without using the given heat template) from the host.  The
+article I mention above asks about this symptom and the conclusion seems to be that
+this is expected behavior and led me to read an
+[article on flat networking](https://wiki.openstack.org/wiki/UnderstandingFlatNetworking)
+to help me debug it and one on
+[provider networks](https://docs.openstack.org/mitaka/install-guide-ubuntu/launch-instance-networks-provider.html)
+to help me understand what is going on.  Honestly, I wonder if my problem was that I
+needed to modify the security group as mentioned above (to allow icmp and ssh).  This
+is a mystery I intend to solve another day.
+
+## Wiping Your Environment
+
+Sometimes you just want to start over from a clean slate (i.e., clean baremetal server)
+without doing an full OS reload.  To do that, follow the
+[wipe](https://docs.openstack.org/openstack-helm/latest/install/developer/cleaning-deployment.html)
+instructions.
+
+In summary, just run the last chunk of commands and reboot.  I paste the instructions
+here to be very specific about what I'm talking about:
+
+```
+for NS in openstack ceph nfs libvirt; do
+   helm ls --namespace $NS --short | xargs -r -L1 -P2 helm delete --purge
+done
+
+sudo systemctl stop kubelet
+sudo systemctl disable kubelet
+
+sudo docker ps -aq | xargs -r -L1 -P16 sudo docker rm -f
+
+sudo rm -rf /var/lib/openstack-helm/*
+
+# NOTE(portdirect): These directories are used by nova and libvirt
+sudo rm -rf /var/lib/nova/*
+sudo rm -rf /var/lib/libvirt/*
+sudo rm -rf /etc/libvirt/qemu/*
+
+# NOTE(portdirect): Clean up mounts left behind by kubernetes pods
+sudo findmnt --raw | awk '/^\/var\/lib\/kubelet\/pods/ { print $1 }' | xargs -r -L1 -P16 sudo umount -f -l
+```

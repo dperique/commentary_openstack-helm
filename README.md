@@ -770,14 +770,68 @@ lo        Link encap:Local Loopback
 
 NOTE: in the original example with a public network, I was unable to ping instances
 I created by hand (i.e., without using the given heat template) from the host.  The
-article I mention above asks about this symptom and the conclusion seems to be that
+instances I created by hand were attached to the public network 172.24.4.0/24 and
+I tried to ping them and they did not respond (I do not know why).
+
+The article I mention above asks about this symptom and the conclusion seems to be that
 this is expected behavior and led me to read an
 [article on flat networking](https://wiki.openstack.org/wiki/UnderstandingFlatNetworking)
-to help me debug it and one on
+to help me debug it and an article on
 [provider networks](https://docs.openstack.org/mitaka/install-guide-ubuntu/launch-instance-networks-provider.html)
 to help me understand what is going on.  Honestly, I wonder if my problem was that I
 needed to modify the security group as mentioned above (to allow icmp and ssh).  This
 is a mystery I intend to solve another day.
+
+### Analysis of Provider vs. Public
+
+Here is what I think is happening (feedback for inaccuracies is welcome).
+
+When you run the comand to "Deploy Compute Kit (Nova and Neutron)", this
+yaml is used:
+
+```
+tee /tmp/neutron.yaml << EOF
+network:
+  interface:
+    tunnel: docker0
+conf:
+  neutron:
+    DEFAULT:
+      l3_ha: False
+      max_l3_agents_per_router: 1
+      l3_ha_network_type: vxlan
+      dhcp_agents_per_network: 1
+  plugins:
+    ml2_conf:
+      ml2_type_flat:
+        flat_networks: public          <-- public network specified
+    openvswitch_agent:
+      agent:
+        tunnel_types: vxlan
+      ovs:
+        bridge_mappings: public:br-ex  <-- map public to br-ex
+    linuxbridge_agent:
+      linux_bridge:
+        bridge_mappings: public:br-ex  <-- map public to br-ex
+EOF
+```
+
+The word "public" means using a public network which (I'm guessing) implies:
+
+* that this network can get FIPs applied to it
+* you cannot reach VMs on that network (I still need to prove or disprove this but
+  the article above suggests this is normal)
+
+In the other two lines that mention "public", they map
+the physical interface "br-ex" to the public network.  I believe in a full
+Openstack deployment, you would have that interface be a physical interface (e.g., eth1)
+where you would reserve a block of IPs for instances.  Further, I believe that for every
+compute node in an Openstack cluster, you would be running with a similar neutron yaml
+that mentions the specific interface on that compute node where you want to attach instances.
+
+When I changed "public" to "provider", this made it so that I can attach intances onto
+that network and ping them.  I'm guessing that it also implies that I cannot attach FIPs
+to them.
 
 ## Wiping Your Environment
 

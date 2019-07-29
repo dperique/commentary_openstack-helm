@@ -765,3 +765,19 @@ sudo rm -rf /etc/libvirt/qemu/*
 # NOTE(portdirect): Clean up mounts left behind by kubernetes pods
 sudo findmnt --raw | awk '/^\/var\/lib\/kubelet\/pods/ { print $1 }' | xargs -r -L1 -P16 sudo umount -f -l
 ```
+
+## Comparison with Packstack RDO
+
+I've installed packstack all-in-one several times and openstack-helm reminds me of it
+except the installation is easier to follow since it's Kubernetes (something I'm very
+familiar/comfortable with troubleshooting).  For the most part, for the all-in-one style
+deployments, I want to be able to create several VMs and have them talk to the Internet,
+to each other and other machines outside of the all-in-one BM device.  I believe both
+Packstack RDO and openstack-helm (with some modifications as mentioned above) accomplish
+this.
+
+## Next Steps
+
+* Try out the multi-node instructions.
+* Get more understanding about what openstack-helm actually is and does.
+* Eventually run this on a 5 node k8s cluster.

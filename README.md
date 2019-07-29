@@ -776,10 +776,135 @@ to each other and other machines outside of the all-in-one BM device.  I believe
 Packstack RDO and openstack-helm (with some modifications as mentioned above) accomplish
 this.
 
+## Limitiations
+
+I have to use openstack cli on the host where I have Kubernetes and openstack-helm because
+the service is not exposed outside of the openstack-helm all-in-one host. I wonder if we
+can make a nodePort for the keystone server and if we need a nodePort for the keystone-api
+as well.
+
+```
+$ kk get svc|grep keysto
+keystone                      ClusterIP   10.98.196.221    <none>        80/TCP,443/TCP                 7h10m
+keystone-api                  ClusterIP   10.108.131.206   <none>        5000/TCP                       7h10m
+
+$ ping keystone.openstack.svc.cluster.local
+PING keystone.openstack.svc.cluster.local (10.98.196.221) 56(84) bytes of data.
+```
+
 ## Next Steps
 
-* Add more image types for say ubuntu and centos
-* Setup networking so that machines outside of teh all-in-one BM can reach my VMs.
+* Add a flavor with 4 CPUs, 8G RAM, 20G disk
+* Setup networking so that machines outside of the all-in-one BM can reach my VMs.
+  * Maybe get a block of IP addresses on the same subnet as my management interface (bond0)
+    on my BM server and setup openstack on a provider network on that interface.
+    * This would involve creating a new bridge calles say "br0", giving it my original
+      IP address, and then adding bond0 to the bridge.  Then I can use bond0 as my provider
+      interface.
+  * For servers that reside on the same subnet as my host, just add a route
+    like `route add -net 172.24.4.0/24 gw x.x.x.x` where x.x.x.x is the IP of my host
+    * This works well because the remote can now reach 172.24.4.0/24 and my VMs
+      don't need a route back to that server (since it is on the same subnet).
 * Try out the multi-node instructions.
 * Get more understanding about what openstack-helm actually is and does.
-* Eventually run this on a 5 node k8s cluster.
+* Eventually run openstack-helm on a 5 node k8s cluster.
+  * not sure if I need to create a provider network on each host
+  * do we allocate certain hosts as compute and certain ones as openstack control plane?
+
+
+## Adding a new Glance Image
+
+I added one of my ubuntu bionic images like this:
+
+```
+$ glance image-create --container-format=bare --disk-format=qcow2  --name=ubuntu16-mk < /tmp/ubuntu-xenial-minikube-0000000045-20G.qcow2 
+...
+
+$ glance image-create --container-format=bare --disk-format=qcow2  --name=ubuntu18 < /tmp/ubuntu-bionic-0000000273.qcow2
++------------------+--------------------------------------+
+| Property         | Value                                |
++------------------+--------------------------------------+
+| checksum         | d1143021de09fced5c1840cdcba1c726     |
+| container_format | bare                                 |
+| created_at       | 2019-07-29T00:54:57Z                 |
+| disk_format      | qcow2                                |
+| id               | ee1231a7-e767-4523-bbec-8ba5b7a97ab6 |
+| min_disk         | 0                                    |
+| min_ram          | 0                                    |
+| name             | ubuntu18                             |
+| owner            | 436e38d55f4f41fba1b68a08100ad401     |
+| protected        | False                                |
+| size             | 702087536                            |
+| status           | active                               |
+| tags             | []                                   |
+| updated_at       | 2019-07-29T00:55:06Z                 |
+| virtual_size     | Not available                        |
+| visibility       | shared                               |
++------------------+--------------------------------------+
+```
+
+Then I created an instance:
+
+```
+$ nova boot bionic1 --flavor m1.large --image "ubuntu18" --key-name dp-key1 --nic net-name=provider
+
+$ nova list
++--------------------------------------+---------+--------+------------+-------------+----------------------+
+| ID                                   | Name    | Status | Task State | Power State | Networks             |
++--------------------------------------+---------+--------+------------+-------------+----------------------+
+| afbf13cd-53f9-4d66-be07-518407792274 | bionic1 | ACTIVE | -          | Running     | provider=172.24.4.12 |
+| eb7ccfed-a94a-4e3a-a552-c600c64104d2 | vm1     | ACTIVE | -          | Running     | provider=172.24.4.17 |
++--------------------------------------+---------+--------+------------+-------------+----------------------+
+
+$ ssh -i xx.rsa bonnyci@172.24.4.12
+Warning: Permanently added '172.24.4.12' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 18.04.2 LTS (GNU/Linux 4.15.0-54-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+The programs included with the Ubuntu system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law.
+
+bonnyci@ubuntu:~$ route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         172.24.4.1      0.0.0.0         UG    0      0        0 ens3
+169.254.169.254 172.24.4.10     255.255.255.255 UGH   0      0        0 ens3
+172.24.4.0      0.0.0.0         255.255.255.0   U     0      0        0 ens3
+
+bonnyci@ubuntu:~$ df -h
+Filesystem      Size  Used Avail Use% Mounted on
+udev            3.9G     0  3.9G   0% /dev
+tmpfs           798M  524K  798M   1% /run
+/dev/vda1        76G  1.6G   71G   3% /
+tmpfs           3.9G     0  3.9G   0% /dev/shm
+tmpfs           5.0M     0  5.0M   0% /run/lock
+tmpfs           3.9G     0  3.9G   0% /sys/fs/cgroup
+tmpfs           798M     0  798M   0% /run/user/1000
+```
+
+
+## Editing Flavors in Horizon
+
+Navigate to System->Flavors and just click Edit.
+
+I setup my flavors like this (my VMs don't need a disk bigger than 20G):
+
+```
+$ openstack flavor list
++--------------------------------------+-----------+-------+------+-----------+-------+-----------+
+| ID                                   | Name      |   RAM | Disk | Ephemeral | VCPUs | Is Public |
++--------------------------------------+-----------+-------+------+-----------+-------+-----------+
+| 06167b2b-2a47-48c5-8272-a79ffeb9880e | m1.medium |  4096 |   20 |         0 |     2 | True      |
+| 1742692c-365e-4c04-a0d4-884d08d075c2 | m1.small  |  2048 |   20 |         0 |     1 | True      |
+| 1984748c-a3c1-4548-b9f4-460e12bf8059 | m1.xlarge | 16384 |   20 |         0 |     8 | True      |
+| a3839c72-63a8-46cb-b2f4-15570a221a86 | m1.tiny   |   512 |    1 |         0 |     1 | True      |
+| bac82ea2-b43c-4ebe-bfcb-3b1e04fea406 | m1.large  |  8192 |   20 |         0 |     4 | True      |
++--------------------------------------+-----------+-------+------+-----------+-------+-----------+
+```

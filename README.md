@@ -785,6 +785,7 @@ is a mystery I intend to solve another day.
 ### Analysis of Provider vs. Public
 
 Here is what I think is happening (feedback for inaccuracies is welcome).
+More bluntly, this is all one big GUESS.
 
 When you run the comand to "Deploy Compute Kit (Nova and Neutron)", this
 yaml is used:
@@ -833,6 +834,21 @@ When I changed "public" to "provider", this made it so that I can attach intance
 that network and ping them.  I'm guessing that it also implies that I cannot attach FIPs
 to them.
 
+When you run the command to setup neutron, it creates the "br-ex" interface -- i.e.,
+do an "ip link" before and after running the neutron setup commands and you will see
+that "br-ex" is created after.  Later in the openstack-helm instructions, you assign
+an IP address to "br-ex".  If "br-ex" is not present, then neutron commands did not
+finish.  These are the commands that add the IP address to "br-ex":
+
+```
+# Assign IP address to br-ex
+OSH_BR_EX_ADDR="172.24.4.1/24"
+OSH_EXT_SUBNET="172.24.4.0/24"
+sudo ip addr add ${OSH_BR_EX_ADDR} dev br-ex
+sudo ip link set br-ex up
+```
+
+
 ## Wiping Your Environment
 
 Sometimes you just want to start over from a clean slate (i.e., clean baremetal server)
@@ -874,7 +890,7 @@ to each other and other machines outside of the all-in-one BM device.  I believe
 Packstack RDO and openstack-helm (with some modifications as mentioned above) accomplish
 this.
 
-## Limitiations
+## Limitations
 
 I have to use openstack cli on the host where I have Kubernetes and openstack-helm because
 the service is not exposed outside of the openstack-helm all-in-one host. I wonder if we
@@ -890,6 +906,14 @@ $ ping keystone.openstack.svc.cluster.local
 PING keystone.openstack.svc.cluster.local (10.98.196.221) 56(84) bytes of data.
 ```
 
+The console display is not working and you get `novncproxy.openstack.svc.cluster.local’s
+server IP address could not be found.` when you try to goto the console.
+
+I will try to look into how to solve this since
+I like being able to use the console for debugging.  But since the instances are working,
+this is not a high priority for me.  But getting to know how to get the DNS to work for
+that name might be useful in itself.
+
 ## Next Steps
 
 * Setup networking so that machines outside of the all-in-one BM can reach my VMs.
@@ -898,6 +922,7 @@ PING keystone.openstack.svc.cluster.local (10.98.196.221) 56(84) bytes of data.
     * This would involve creating a new bridge calles say "br0", giving it my original
       IP address, and then adding bond0 to the bridge.  Then I can use bond0 as my provider
       interface.
+    * Something like [this example from RDO Packstack](https://www.rdoproject.org/networking/neutron-with-existing-external-network/)
   * For servers that reside on the same subnet as my host, just add a route
     like `route add -net 172.24.4.0/24 gw x.x.x.x` where x.x.x.x is the IP of my host
     * This works well because the remote can now reach 172.24.4.0/24 and my VMs
@@ -1108,14 +1133,14 @@ Certain pods running using the docker IP:
 
 ```
 $ kk get po -o wide |grep -v 192.168
-NAME                                          READY   STATUS      RESTARTS   AGE     IP                NODE      NOMINATED NODE   READINESS GATES
-libvirt-libvirt-default-9zq4v                 1/1     Running     0          7h32m   172.17.0.1        hstack1   <none>           <none>
-neutron-dhcp-agent-default-vb7mm              1/1     Running     0          7h22m   172.17.0.1        hstack1   <none>           <none>
-neutron-l3-agent-default-9sn8x                1/1     Running     0          7h22m   172.17.0.1        hstack1   <none>           <none>
-neutron-metadata-agent-default-4vx5w          1/1     Running     0          7h22m   172.17.0.1        hstack1   <none>           <none>
-neutron-ovs-agent-default-rm8cv               1/1     Running     0          7h22m   172.17.0.1        hstack1   <none>           <none>
-nova-compute-default-flfxx                    1/1     Running     0          7h23m   172.17.0.1        hstack1   <none>           <none>
-nova-novncproxy-fd98699d5-7xxrx               1/1     Running     0          7h23m   172.17.0.1        hstack1   <none>           <none>
-openvswitch-db-r4j2q                          1/1     Running     0          7h35m   172.17.0.1        hstack1   <none>           <none>
-openvswitch-vswitchd-hnm8m                    1/1     Running     0          7h35m   172.17.0.1        hstack1   <none>           <none>
+NAME                                          READY   STATUS      RESTARTS   AGE     IP                NODE
+libvirt-libvirt-default-9zq4v                 1/1     Running     0          7h32m   172.17.0.1        hstack1
+neutron-dhcp-agent-default-vb7mm              1/1     Running     0          7h22m   172.17.0.1        hstack1
+neutron-l3-agent-default-9sn8x                1/1     Running     0          7h22m   172.17.0.1        hstack1
+neutron-metadata-agent-default-4vx5w          1/1     Running     0          7h22m   172.17.0.1        hstack1
+neutron-ovs-agent-default-rm8cv               1/1     Running     0          7h22m   172.17.0.1        hstack1
+nova-compute-default-flfxx                    1/1     Running     0          7h23m   172.17.0.1        hstack1
+nova-novncproxy-fd98699d5-7xxrx               1/1     Running     0          7h23m   172.17.0.1        hstack1
+openvswitch-db-r4j2q                          1/1     Running     0          7h35m   172.17.0.1        hstack1
+openvswitch-vswitchd-hnm8m                    1/1     Running     0          7h35m   172.17.0.1        hstack1
 ```

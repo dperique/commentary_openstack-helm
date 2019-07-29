@@ -794,7 +794,6 @@ PING keystone.openstack.svc.cluster.local (10.98.196.221) 56(84) bytes of data.
 
 ## Next Steps
 
-* Add a flavor with 4 CPUs, 8G RAM, 20G disk
 * Setup networking so that machines outside of the all-in-one BM can reach my VMs.
   * Maybe get a block of IP addresses on the same subnet as my management interface (bond0)
     on my BM server and setup openstack on a provider network on that interface.
@@ -814,7 +813,7 @@ PING keystone.openstack.svc.cluster.local (10.98.196.221) 56(84) bytes of data.
 
 ## Adding a new Glance Image
 
-I added one of my ubuntu bionic images like this:
+I added some images like this:
 
 ```
 $ glance image-create --container-format=bare --disk-format=qcow2  --name=ubuntu16-mk < /tmp/ubuntu-xenial-minikube-0000000045-20G.qcow2 

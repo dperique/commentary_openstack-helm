@@ -9,6 +9,29 @@ To install Openstack helm using the all-in-one (AIO) method,
 follow the
 [official instructions](https://docs.openstack.org/openstack-helm/latest/install/developer/index.html).
 
+The summary:
+
+```
+git clone https://opendev.org/openstack/openstack-helm-infra.git
+git clone https://opendev.org/openstack/openstack-helm.git
+cd openstack-helm
+./tools/deployment/developer/common/010-deploy-k8s.sh
+./tools/deployment/developer/common/020-setup-client.sh
+./tools/deployment/developer/common/030-ingress.sh
+./tools/deployment/developer/nfs/040-nfs-provisioner.sh
+./tools/deployment/developer/nfs/050-mariadb.sh
+./tools/deployment/developer/nfs/060-rabbitmq.sh
+./tools/deployment/developer/nfs/070-memcached.sh
+./tools/deployment/developer/nfs/080-keystone.sh
+./tools/deployment/developer/nfs/090-heat.sh
+./tools/deployment/developer/nfs/100-horizon.sh
+./tools/deployment/developer/nfs/120-glance.sh
+./tools/deployment/developer/nfs/140-openvswitch.sh
+./tools/deployment/developer/nfs/150-libvirt.sh
+./tools/deployment/developer/nfs/160-compute-kit.sh
+./tools/deployment/developer/nfs/170-setup-gateway.sh
+```
+
 But here is some commentary on some of the more interesting steps
 to help you avoid and mitigate certain issues that came up for me.
 
@@ -422,19 +445,37 @@ ubuntu@hstack1:~/new/openstack-helm$ openstack stack create --wait \
 | stack_status        | CREATE_COMPLETE                      |
 | stack_status_reason | Stack CREATE completed successfully  |
 +---------------------+--------------------------------------+
-
+```
 
 Goto horizon via the IP address of your baremetal server on port 3100
 (e.g., http://x.x.x.x:31000) where x.x.x.x is the IP address of your baremetal server.
 
-The 31000 is a Kubernetes nodePort that you can view via ‘kk get svc | grep horizon’.
+The 31000 is a Kubernetes nodePort that you can view via `kk get svc | grep horizon`.
 
 Goto the horizon UI and click on top right to Download the v3 api info.
 Source that info on a shell on your host using user=admin, password=password.
 
+NOTE: you can also set the variables as mentioned in the openstack-helm docs:
+
+```
+export OS_USERNAME='admin'
+export OS_PASSWORD='password'
+export OS_PROJECT_NAME='admin'
+export OS_PROJECT_DOMAIN_NAME='default'
+export OS_USER_DOMAIN_NAME='default'
+export OS_AUTH_URL='http://keystone.openstack.svc.cluster.local/v3'
+```
+
+or
+
+```
 $ source admin-openrc.sh 
 Please enter your OpenStack Password for project admin as user admin: 
+```
 
+Then run the openstack cli:
+
+```
 $ openstack flavor list
 +--------------------------------------+-----------+-------+------+-----------+-------+-----------+
 | ID                                   | Name      |   RAM | Disk | Ephemeral | VCPUs | Is Public |
@@ -471,7 +512,7 @@ ubuntu@hstack1:~$ openstack network list
 +--------------------------------------+--------+--------------------------------------+
 | 23b7c302-d4b2-4fdb-8bf9-6e1ca4527509 | public | 630ff8c4-260a-4868-bbe4-b6e602033adb |
 +--------------------------------------+--------+--------------------------------------+
-```
+````
 
 Add a keypair on the cli:
 
@@ -609,13 +650,15 @@ ubuntu@hstack1:~/new/openstack-helm$ openstack stack create --wait \
 ## Using the Environment
 
 If you run the [Exercise the Cloud](https://docs.openstack.org/openstack-helm/latest/install/developer/exercise-the-cloud.html)
-section, it will create a VM on a private subnet (10.0.0.0/8) on a public network (172.24.4.0/24) and
-attach a FIP on it.  After that, it does an ssh to the VM and tries various things.
+section, it will create a VM on a private subnet (10.0.0.0/8) and attach it to a routeer that is
+on a public network (172.24.4.0/24) and
+attach a FIP on it.  After that, the script does an ssh to the VM and tries various things.
 
 This is nice because it tests public network, private network, FIPs and basic connectivity using
 a basic image.  This is good for developer purposes and just trying things out.  However, as
 mentioned in this [article](https://ask.openstack.org/en/question/7145/havana-unable-to-ping-instances-from-host-machine/)
-not everyone understands what is going on.
+not everyone understands what is going on.  And this setup may not be the use-case a lot of people
+want (i.e., some VMs on a subnet all on a BM).
 
 ## Using a Provider Network
 
@@ -623,9 +666,10 @@ For my needs, I wanted to have a provider network (as opposed to a public networ
 to attach VMs there and then just run them.  I don't need FIPs.
 
 To do what I wanted, I followed the
-[instructions to wipe](https://docs.openstack.org/openstack-helm/latest/install/developer/cleaning-deployment.html)
-and applied these changes (in the openstack-helm repo) before running the "compute-kit" installation script:
-
+[instructions to wipe](https://docs.openstack.org/openstack-helm/latest/install/developer/cleaning-deployment.html),
+rebooted, re-applied the openstack-helm instructions (to get a fresh install) except that
+I applied these changes (in the openstack-helm repo) before running the "compute-kit" installation script (thus
+mapping br-ex as a provider network an dnot a public network):
 ```
 ubuntu@hstack1:~/new/openstack-helm$ git diff 
 diff --git a/tools/deployment/developer/nfs/160-compute-kit.sh b/tools/deployment/developer/nfs/160-compute-kit.sh
@@ -653,7 +697,7 @@ index 7e2a7fd..f339401 100755
 I skipped the "Exercise the Cloud" script.
 
 Follow this [doc](https://docs.openstack.org/mitaka/install-guide-ubuntu/launch-instance-networks-provider.html)
-starting at "Create the provider network" do this:
+starting at "Create the provider network" and do this:
 
 ```
 $ openstack network create  --share --external \

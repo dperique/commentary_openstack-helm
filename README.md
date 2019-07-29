@@ -778,6 +778,8 @@ this.
 
 ## Next Steps
 
+* Add more image types for say ubuntu and centos
+* Setup networking so that machines outside of teh all-in-one BM can reach my VMs.
 * Try out the multi-node instructions.
 * Get more understanding about what openstack-helm actually is and does.
 * Eventually run this on a 5 node k8s cluster.

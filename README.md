@@ -1332,3 +1332,54 @@ kk exec -ti $m1 -- ldd /tmp/ping99
 kk exec -ti $m1 -- /tmp/ping99 8.8.8.8  ;# this gets error
 kk exec -ti $m1 -- rm /tmp/ping99
 ```
+
+I resort to making my own pod in the openstack namespace using a sample
+[tool-container](https://github.com/dperique/tool-container/blob/master/centos-client.yaml)
+modified to go into the `openstack` namespace (it's just Centos in a container which contains
+ping):
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dp-client
+  namespace: openstack
+spec:
+  hostname: dp-client
+  containers:
+  - image: centos/python-35-centos7
+    imagePullPolicy: Always
+    name: dp-client
+    command: [ "sleep", "999999" ]
+```
+
+I apply the yaml and try a ping:
+
+```
+$ kubectl apply -f x.yaml
+pod/dp-client created
+
+$ kk exec -ti dp-client -- /bin/bash
+
+(app-root)bash-4.2$ cat /etc/resolv.conf
+nameserver 10.96.0.10
+search openstack.svc.cluster.local svc.cluster.local cluster.local
+options ndots:5
+
+(app-root)bash-4.2$ ping 8.8.8.8
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=53 time=0.959 ms
+^C
+--- 8.8.8.8 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.959/0.959/0.959/0.000 ms
+
+(app-root)bash-4.2$ ping novncproxy.openstack.svc.cluster.local
+PING novncproxy.openstack.svc.cluster.local (10.107.156.255) 56(84) bytes of data.
+^C
+--- novncproxy.openstack.svc.cluster.local ping statistics ---
+2 packets transmitted, 0 received, 100% packet loss, time 999ms
+```
+
+So I can ping the Internet and resolve the `novncproxy.openstack.svc.cluster.local`
+variable.

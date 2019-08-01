@@ -1438,3 +1438,27 @@ $ kk get svc|grep novnc
 nova-novncproxy               ClusterIP   10.107.178.6     <none>        6080/TCP                       3d18h
 novncproxy                    NodePort    10.107.156.255   <none>        80:30080/TCP,443:30443/TCP     3d18h
 ```
+
+Now I need to add the `novncproxy.openstack.svc.cluster.local` url to my `/etc/hosts` on the machine running my browser:
+
+```
+$ cat /etc/hosts
+...
+10.198.203.108   novncproxy.openstack.svc.cluster.local
+...
+```
+
+When I click the console link from instances, I get farther but the console still does not load.
+I have to make the link look like this:
+
+```
+http://novncproxy.openstack.svc.cluster.local:30080/vnc_auto.html?token=...&title=ubuntu-mk1(...)
+```
+
+instead of:
+
+```
+http://novncproxy.openstack.svc.cluster.local/vnc_auto.html?token=...&title=ubuntu-mk1(...)
+```
+
+Now I see my console.  At this point, I have a console though I need to tweak the url.  I'm ok with that.

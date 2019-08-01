@@ -1384,7 +1384,11 @@ PING novncproxy.openstack.svc.cluster.local (10.107.156.255) 56(84) bytes of dat
 So I can ping the Internet and resolve the `novncproxy.openstack.svc.cluster.local`
 variable.
 
-Let's try to make the service a NodePort. I created the first file below by
+## Getting the console to work
+
+Continuing on from DNS debugging to finally getting console to work ...
+
+Let's try to make the `novncproxy` a NodePort. I created the first file below by
 doing `kubectl -n openstack edit svc novncproxy`.  I created the second one by copy/paste
 and changing it to a NodePort type:
 

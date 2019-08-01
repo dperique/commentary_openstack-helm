@@ -1144,3 +1144,102 @@ nova-novncproxy-fd98699d5-7xxrx               1/1     Running     0          7h2
 openvswitch-db-r4j2q                          1/1     Running     0          7h35m   172.17.0.1        hstack1
 openvswitch-vswitchd-hnm8m                    1/1     Running     0          7h35m   172.17.0.1        hstack1
 ```
+
+## A Reboot Test
+
+I power-cycled the host running the openstack-helm deployment.  The machine came up ok
+but the openstack-helm pods did not look good:
+
+```
+$ kk get po |grep -v Running|grep -v Comple
+NAME                                          READY   STATUS      RESTARTS   AGE
+glance-api-7c988cf5f9-s9b9k                   0/1     Error       0          3d7h
+glance-registry-565594b768-wnc57              0/1     Init:0/1    1          3d7h
+heat-api-6d74d44b74-6kspd                     0/1     Error       0          3d7h
+horizon-6c54fc6c68-sc827                      0/1     Error       0          3d7h
+libvirt-libvirt-default-9zq4v                 0/1     Init:0/1    1          3d6h
+neutron-dhcp-agent-default-vb7mm              0/1     Init:0/1    1          3d6h
+neutron-l3-agent-default-9sn8x                0/1     Init:0/1    1          3d6h
+neutron-metadata-agent-default-4vx5w          0/1     Init:0/2    1          3d6h
+neutron-ovs-agent-default-rm8cv               0/1     Error       0          3d6h
+neutron-server-74d5b8f467-hgc7k               0/1     Error       0          3d6h
+nova-api-metadata-66b8d4b5dd-xdm6n            0/1     Error       1          3d6h
+nova-api-osapi-84b9f7b646-rxbk9               0/1     Error       0          3d6h
+nova-compute-default-flfxx                    0/1     Init:0/3    1          3d6h
+nova-conductor-5757498876-qgwh5               0/1     Init:0/1    1          3d6h
+nova-consoleauth-55b5755f5b-8j7bz             0/1     Init:0/1    1          3d6h
+nova-placement-api-6468cdf988-27p9c           0/1     Error       0          3d6h
+nova-scheduler-6ddfb7b5d4-7bp5p               0/1     Init:0/1    1          3d6h
+```
+
+I manually ran the `./tools/deployment/developer/nfs/170-setup-gateway.sh` commands
+(copy/pasted here so you can see):
+
+```
+#!/bin/bash
+
+# Assign IP address to br-ex
+OSH_BR_EX_ADDR="172.24.4.1/24"
+OSH_EXT_SUBNET="172.24.4.0/24"
+sudo ip addr add ${OSH_BR_EX_ADDR} dev br-ex
+sudo ip link set br-ex up
+
+# NOTE(portdirect): With Docker >= 1.13.1 the default FORWARD chain policy is
+# configured to DROP, for the l3 agent to function as expected and for
+# VMs to reach the outside world correctly this needs to be set to ACCEPT.
+sudo iptables -P FORWARD ACCEPT
+
+# Setup masquerading on default route dev to public subnet
+DEFAULT_ROUTE_DEV="$(sudo ip -4 route list 0/0 | awk '{ print $5; exit }')"
+sudo iptables -t nat -A POSTROUTING -o ${DEFAULT_ROUTE_DEV} -s ${OSH_EXT_SUBNET} -j MASQUERADE
+```
+
+I then cleaned up the `br-ex-dns-server` container:
+
+```
+$ sudo docker ps -a|grep br-ex
+729b1d331994        openstackhelm/neutron:ocata   "dnsmasq --keep-in-f…"   3 days ago           Exited (255) 14 minutes ago                         br-ex-dns-server
+$ sudo docker rm 729b1d331994
+```
+
+Then finished up the rest of the script:
+
+```
+# NOTE(portdirect): Setup DNS for public endpoints
+sudo docker run -d \
+  --name br-ex-dns-server \
+  --net host \
+  --cap-add=NET_ADMIN \
+  --volume /etc/kubernetes/kubelet-resolv.conf:/etc/kubernetes/kubelet-resolv.conf:ro \
+  --entrypoint dnsmasq \
+  docker.io/openstackhelm/neutron:ocata \
+    --keep-in-foreground \
+    --no-hosts \
+    --bind-interfaces \
+    --resolv-file=/etc/kubernetes/kubelet-resolv.conf \
+    --address="/svc.cluster.local/${OSH_BR_EX_ADDR%/*}" \
+    --listen-address="${OSH_BR_EX_ADDR%/*}"
+sleep 1
+sudo docker top br-ex-dns-server
+```
+
+At this point, all the pods came up:
+
+```
+$ kk get po |grep -v Running|grep -v Comple
+NAME                                          READY   STATUS      RESTARTS   AGE
+```
+
+I then tried a test VM:
+
+```
+$ nova boot fedora1 --flavor m1.xlarge --image "fedora19" --key-name dp-key1 --nic net-name=provider
+$ nova list
++--------------------------------------+---------+--------+------------+-------------+----------------------+
+| ID                                   | Name    | Status | Task State | Power State | Networks             |
++--------------------------------------+---------+--------+------------+-------------+----------------------+
+| c60a24cf-9868-4fe8-b630-92f2bdbd7ac9 | fedora1 | ACTIVE | -          | Running     | provider=172.24.4.28 |
++--------------------------------------+---------+--------+------------+-------------+----------------------+
+```
+
+This shows that the openstack-helm host can survive a reboot.

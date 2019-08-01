@@ -1243,3 +1243,92 @@ $ nova list
 ```
 
 This shows that the openstack-helm host can survive a reboot.
+
+
+## Debugging DNS
+
+I'm having trouble getting the instance console to work in the horizon UI.  This section
+mentions how I went about debugging it.
+
+I access the horizon UI from the horizon NodePort at 31000:
+
+```
+$ kubectl get svc -n openstack |grep NodePort
+horizon-int                   NodePort    10.101.138.0     <none>        80:31000/TCP                   3d8h
+```
+
+When I try to access an instance console, I get an error about not being able to resolve
+`novncproxy.openstack.svc.cluster.local's server IP address could not be found`.
+
+Looking at any relevant service:
+
+```
+$ kubectl get svc -n openstack |grep -i novncproxy                            
+nova-novncproxy               ClusterIP   10.107.178.6     <none>        6080/TCP                       3d7h
+novncproxy                    ClusterIP   10.107.156.255   <none>        80/TCP,443/TCP                 3d7h
+```
+
+One of the `ip netns` can resolve that IP:
+
+```
+$ kubectl get svc -n kube-system |grep dns
+kube-dns              ClusterIP   10.96.0.10      <none>        53/UDP,53/TCP              3d11h
+
+$ ip netns
+qdhcp-446d8b52-e4c9-4d54-a6d9-7830bd141ad8
+
+$ sudo ip netns exec qdhcp-446d8b52-e4c9-4d54-a6d9-7830bd141ad8 cat /etc/resolv.conf
+search svc.cluster.local cluster.local
+nameserver 10.96.0.10
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+options ndots:5 timeout:1 attempts:1
+
+$ sudo ip netns exec qdhcp-446d8b52-e4c9-4d54-a6d9-7830bd141ad8 ping novncproxy.openstack.svc.cluster.local
+PING novncproxy.openstack.svc.cluster.local (10.107.156.255) 56(84) bytes of data.
+```
+
+I want to use `ping` to help debug but the `ping` executable is not present on the
+pods I tried.  My solution to this is to copy the `ping` executable from the host to
+one of the pods and ping from there to ensure I can resolve the
+`novncproxy.openstack.svc.cluster.local` name:
+
+```
+$ kubectl cp `which ping` openstack/neutron-ovs-agent-default-rm8cv:/tmp
+$ kk exec -ti neutron-ovs-agent-default-rm8cv -- /bin/bash
+neutron@hstack1:/$ ldd /tmp/ping                                                                                             
+	linux-vdso.so.1 =>  (0x00007ffd12f3c000)
+	libcap.so.2 => /lib/x86_64-linux-gnu/libcap.so.2 (0x00007f06b305d000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f06b2c93000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f06b3263000)
+```
+
+The dynamic libraries resolve so ping should be good to go.
+
+```
+neutron@hstack1:/$ cat /etc/resolv.conf 
+nameserver 10.96.0.10
+search openstack.svc.cluster.local svc.cluster.local cluster.local
+options ndots:5
+neutron@hstack1:/$ /tmp/ping novncproxy.openstack.svc.cluster.local
+ping: icmp open socket: Operation not permitted
+neutron@hstack1:/$ sudo /tmp/ping novncproxy.openstack.svc.cluster.local
+[sudo] password for neutron: 
+Sorry, try again.
+[sudo] password for neutron: 
+neutron@hstack1:/$ rm /tmp/ping 
+```
+
+That didn't work.
+
+I start iterating through a bunch of pods to see if I can get ping to work.
+But it seems I get the same issue above where I cannot use ping due to no
+priveledges.
+
+```
+m1=aPodName
+kubectl cp `which ping` openstack/$m1:/tmp/ping99
+kk exec -ti $m1 -- ldd /tmp/ping99
+kk exec -ti $m1 -- /tmp/ping99 8.8.8.8  ;# this gets error
+kk exec -ti $m1 -- rm /tmp/ping99
+```

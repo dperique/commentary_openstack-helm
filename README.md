@@ -1383,3 +1383,58 @@ PING novncproxy.openstack.svc.cluster.local (10.107.156.255) 56(84) bytes of dat
 
 So I can ping the Internet and resolve the `novncproxy.openstack.svc.cluster.local`
 variable.
+
+Let's try to make the service a NodePort. I created the first file below by
+doing `kubectl -n openstack edit svc novncproxy`.  I created the second one by copy/paste
+and changing it to a NodePort type:
+
+```
+$ cat novncproxy.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: novncproxy
+  namespace: openstack
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 443
+  selector:
+    app: ingress-api
+  sessionAffinity: None
+  type: ClusterIP
+
+$ cat novncproxy-nodeport.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: novncproxy
+  namespace: openstack
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    nodePort: 30080
+  - name: https
+    port: 443
+    protocol: TCP
+    nodePort: 30443
+  selector:
+    app: ingress-api
+  sessionAffinity: None
+  type: NodePort
+
+$ kk apply -f novncproxy-nodeport.yaml
+service/novncproxy configured
+
+$ kk get svc|grep novnc
+nova-novncproxy               ClusterIP   10.107.178.6     <none>        6080/TCP                       3d18h
+novncproxy                    NodePort    10.107.156.255   <none>        80:30080/TCP,443:30443/TCP     3d18h
+```

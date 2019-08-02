@@ -1466,3 +1466,67 @@ http://novncproxy.openstack.svc.cluster.local/vnc_auto.html?token=...&title=ubun
 ```
 
 Now I see my console.  At this point, I have a console though I need to tweak the url.  I'm ok with that.
+
+
+## Making custom images
+
+My goal is to create a VM, make custom changes to it (e.g. install packages, etc) and then
+save that image.  There are a few ways to do this:
+
+* Use Disk Image Builder (DIB)
+* Create a VM, customize it, copy off the underlying qcow2 file and spin up VMs based on that
+
+I focus on the second option.
+
+The images are located in `/var/lib/nova`:
+
+```
+$ nova list
++--------------------------------------+------------+--------+-------------+----------------------+
+| ID                                   | Name       | Status | Power State | Networks             |
++--------------------------------------+------------+--------+-------------+----------------------+
+| c60a24cf-9868-4fe8-b630-92f2bdbd7ac9 | fedora1    | ACTIVE | Running     | provider=172.24.4.28 |
+| 2bd4f21a-e129-4d47-9938-219411af4708 | ubuntu-mk1 | ACTIVE | Running     | provider=172.24.4.13 |
++--------------------------------------+------------+--------+-------------+----------------------+
+
+$ cd /var/lib/nova
+$ tree
+.
+`-- instances
+    |-- 2bd4f21a-e129-4d47-9938-219411af4708
+    |   |-- console.log
+    |   |-- disk                                       <-- ubuntu-mk1 disk image
+    |   `-- disk.info
+    |-- _base                                          <-- base images
+    |   |-- 5d613f632fcd99c9a7c7bb3e7acb9c686f0f18c3
+    |   `-- ea2befec3e307c87cfdeb030c6b51f589b8b09d9
+    |-- c60a24cf-9868-4fe8-b630-92f2bdbd7ac9
+    |   |-- console.log
+    |   |-- disk                                       <-- fedora1 disk image
+    |   `-- disk.info
+    |-- compute_nodes
+    `-- locks
+        |-- nova-5d613f632fcd99c9a7c7bb3e7acb9c686f0f18c3
+        |-- nova-ea2befec3e307c87cfdeb030c6b51f589b8b09d9
+        `-- nova-storage-registry-lock
+```
+
+Note the location of the base images and the image location of one of my instances
+`ubuntu-mk1`.  See the sizes of those images below:
+
+```
+$ cd instances/c60a24cf-9868-4fe8-b630-92f2bdbd7ac9/
+$ ls -lh
+total 339M
+-rw-r--r-- 1 42424 input  53K Jul 31 20:34 console.log
+-rw-r--r-- 1 42424 input 339M Aug  2 06:46 disk
+-rw-r--r-- 1 42424 42424   79 Jul 31 20:33 disk.info
+
+$ file disk
+disk: QEMU QCOW Image (v3), has backing file
+  (path /var/lib/nova/instances/_base/5d613f632fcd99c9a7c7bb3e7acb9c686), 21474836480 bytes
+```
+
+The "disk" file is the one we want to save off so we can make new instances of it.  We
+need to be careful to copy the image in such a way that we include the contents of the
+"backing file".

@@ -1530,3 +1530,45 @@ disk: QEMU QCOW Image (v3), has backing file
 The "disk" file is the one we want to save off so we can make new instances of it.  We
 need to be careful to copy the image in such a way that we include the contents of the
 "backing file".
+
+# Nova snapshots
+
+```
+ubuntu@hstack1:~/new/openstack-helm/glance$ nova image-create fedora1 fedora1-snap-8-5-2019 --poll --show
+
+Server snapshotting... 100% complete
+Finished
++--------------------+------------------------------------------------------+
+| Property           | Value                                                |
++--------------------+------------------------------------------------------+
+| base_image_ref     | e048e385-600d-4110-b266-2298b7f343dd                 |
+| boot_roles         | admin,member                                         |
+| checksum           | 0792473921d4d78b56434ebc30997bcd                     |
+| container_format   | bare                                                 |
+| created_at         | 2019-08-05T12:16:28Z                                 |
+| disk_format        | qcow2                                                |
+| file               | /v2/images/e792ef92-cdbf-4196-a5e9-43e51213f2ca/file |
+| id                 | e792ef92-cdbf-4196-a5e9-43e51213f2ca                 |
+| image_location     | snapshot                                             |
+| image_state        | available                                            |
+| image_type         | snapshot                                             |
+| instance_uuid      | c60a24cf-9868-4fe8-b630-92f2bdbd7ac9                 |
+| min_disk           | 20                                                   |
+| min_ram            | 0                                                    |
+| name               | fedora1-snap-8-5-2019                                |
+| owner              | 436e38d55f4f41fba1b68a08100ad401                     |
+| owner_id           | 436e38d55f4f41fba1b68a08100ad401                     |
+| owner_project_name | admin                                                |
+| owner_user_name    | admin                                                |
+| protected          | False                                                |
+| schema             | /v2/schemas/image                                    |
+| self               | /v2/images/e792ef92-cdbf-4196-a5e9-43e51213f2ca      |
+| size               | 1195114496                                           |
+| status             | active                                               |
+| tags               | []                                                   |
+| updated_at         | 2019-08-05T12:17:16Z                                 |
+| user_id            | fcaee9ad261a4803b6974e28c21a6c80                     |
+| virtual_size       | -                                                    |
+| visibility         | private                                              |
++--------------------+------------------------------------------------------+
+```
